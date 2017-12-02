@@ -1,0 +1,555 @@
+---
+title: "Lab4_Kiersten_v1"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading and Briefly Exploring Data
+
+```{r}
+library(xts)
+library(ggplot2)
+library(zoo)
+library(fpp2)
+library(forecast)
+library(astsa)
+library(dplyr)
+library(Hmisc)
+library(plotly)
+library(lattice)
+library(tseries)
+```
+
+
+```{r }
+time_series = read.csv("Lab4-series2.csv", header=TRUE, stringsAsFactors = FALSE)
+summary(time_series)
+str(time_series)
+length(time_series$X)
+
+names(time_series)
+head(time_series, 25)
+tail(time_series, 25)
+
+
+```
+
+
+-The series covers the time period between January 1990 and November 2015, with measurements being made on the first day of every month. 
+There are no missing values and no strange outliers for the ?dependent variable.
+
+## Creating Subset of Time Series for Modeling
+
+
+```{r }
+time_series_index <- seq(as.Date("1990/1/1"), by="month", length.out = length(time_series[,1]))
+time_series_xts <- xts(time_series, order.by = time_series_index)
+full_time_series <- time_series_xts[,-1]
+
+subset_data<- time_series_xts['1990-01-01/2014-12-01']
+time_series_subset <- subset_data[,-1]
+#View(time_series_subset)
+```
+
+There are cycles unpredictable duration during which the value of "y" increases in magnitude. However, there is a general trend for the value of y to decrease over time. There is a seasonal component, and to investigate it further, we take a closer look on the scale of two years below. The variance seems constant over time, ie. there are not bursts of xxx or heteroskedasticity over time, therefore we do not see the need to log transform the series.
+```{r}
+autoplot(time_series_subset)
+```
+
+
+There appear to be complex seasonal patterns in our time series which we will more carefully investigate below.
+
+
+```{r}
+further_subset_data<- time_series_subset['1996-01-01/1997-12-01']
+autoplot(further_subset_data)
+```
+
+In order to compare months across every year of the time series, we created a time series object from our original dataframe.
+
+```{r}
+series.ts <- ts(time_series[1:300,2], start=1990, freq=12)
+```
+
+Before differencing for the overall downward ternd of the series, the seasonal component is not as obvious. However after differencing,there is very obvious seasonality to this time series. Within each year there appear to be three distinct "phases". 
+The seasonality is no loger obvious once we perform lag 12 seasonal differencing on the trend-differenced data. 
+
+```{r}
+series.ts %>% ggmonthplot
+
+series.ts %>% diff() %>% ggmonthplot
+
+series.ts %>% diff() %>% diff(lag=12) %>% ggmonthplot
+
+```
+
+In support of including an integrated seasonal component when we estimate our model, we found that when we only differenced for trend, the series is not stationary.
+
+```{r}
+trend_diff = diff(time_series_subset)
+plot(trend_diff)
+hist(trend_diff)
+adf.test(time_series_subset, alternative="stationary",k=1)
+```
+
+```{r}
+Acf(trend_diff)
+Pacf(trend_diff)
+```
+
+Below we examine the ACF and pACF of the trend and seasonally differenced series.
+
+```{r}
+season_diff = diff(trend_diff, 12)
+plot(season_diff)
+hist(season_diff)
+```
+
+```{r}
+ggAcf(season_diff)
+ggPacf(season_diff)
+```
+
+
+We also examine the series when only performing seasonal differncing (no trend differencing). After only including seasonal differencing, the series appears stationary by the augmented Dickey Fuller test (we can reject the null hypothesis that there is a unit root). However, the ACF is fairly persistent and the models estimated using only seasonal trend differencing do not have acceptable model diagnostics (the residuals are not sufficiently independent of each other).
+
+The models estimated using only seasonally differenced series are AR models in the non-seasonal component ( (3,0,0)(1,1,0)_12 and (6,0,0)(1,1,0)_12) based on the significant lags in the ACF and pACF.
+
+
+
+```{r}
+season_diff_only = diff(time_series_subset, 12)
+plot(season_diff_only)
+hist(season_diff_only)
+Acf(season_diff_only)
+Pacf(season_diff_only)
+adf.test(time_series_subset, alternative="stationary",k=12)
+
+```
+
+
+```{r}
+second_season_diff = diff(season_diff_only, 12)
+plot(second_season_diff)
+hist(second_season_diff)
+Acf(second_season_diff)
+Pacf(second_season_diff)
+```
+
+##Model Estimation
+
+I favored estimating models that include a base and seasonal integrated component, but I then tried modeling with only seasonal differencing and the results were not acceptable.
+
+-the ploted forecasts from all the SARIMA look very similar
+
+```{r}
+#most of coefficients not stat sign, but cannot reject Ho that residuals are independent
+fit1 <- Arima(time_series_subset, order=c(3,1,3), seasonal = list(order =c(0,1,1), period=12))
+residuals1 <- residuals(fit1)
+checkresiduals(fit1)
+summary(fit1)
+fit1.fcast <- forecast(fit1, h=11)
+plot(fit1.fcast)
+
+
+#time_series_subset %>%
+#  Arima(order=c(2,1,2), seasonal= list(order =c(2,1,2), period=12)) %>%
+#  residuals %>%
+#  ggtsdisplay
+
+#par(mfrow=c(2,2))
+#plot(residuals1)
+
+#plot white noise next to residuals for comparison
+#w=rnorm(300,0,1)
+
+#annoying - look this up in class notes
+#white_noise <- arima.sim(300, order=c(0,0,0))
+
+
+#white_noise = arima(w,order=c(0,0,0))
+#plot.ts(w, main="Simulated White Noise")
+```
+
+
+
+```{r}
+#coefficients are all stat significant, cannot reject null hypothesis that residuals are independent of each other
+fit2 <- Arima(time_series_subset, order=c(2,1,2), seasonal = list(order =c(0,1,1), period=12))
+residuals2 <- residuals(fit2)
+checkresiduals(fit2)
+summary(fit2)
+fit2.fcast <- forecast(fit2, h=11)
+#plot(fit2.fcast)
+#lines(fitted(fit2), col="purple")
+```
+
+```{r}
+#non-seasonal coefficients are not stat significant, but cannot reject null hypothesis that residuals are independent of each other
+fit3 <- Arima(time_series_subset, order=c(2,1,2), seasonal = list(order =c(1,1,1), period=12))
+residuals3 <- residuals(fit3)
+checkresiduals(fit3)
+summary(fit3)
+fit3.fcast <- forecast(fit3, h=11)
+#plot(fit3.fcast)
+```
+
+
+```{r}
+#non-seasonal coefficients are stat significant, seasonal ar term is not significant, but cannot reject null hypothesis that residuals are independent of each other
+fit4 <- Arima(time_series_subset, order=c(1,1,1), seasonal = list(order =c(0,1,1), period=12))
+residuals4 <- residuals(fit4)
+checkresiduals(fit4)
+summary(fit4)
+fit4.fcast <- forecast(fit4, h=11)
+plot(fit4.fcast)
+```
+
+
+```{r}
+#seasonal coefficients are not stat significant, but cannot reject null hypothesis that residuals are independent of each other
+fit5 <- Arima(time_series_subset, order=c(1,1,1), seasonal = list(order =c(1,1,1), period=12))
+residuals5 <- residuals(fit5)
+checkresiduals(fit5)
+summary(fit5)
+fit5.fcast <- forecast(fit5, h=11)
+#plot(fit5.fcast)
+```
+
+
+#ignore 3 cells below, i am trying to figure out how to plot series on top of each other with forecast included
+```{r}
+#plot.ts(full_time_series)
+#lines(fitted(fit1), col="purple")
+
+#the below dont do anything
+#lines(fit1$residuals, col="red")
+#lines(fit1$fcast, col="purple")
+```
+
+
+```{r}
+#fit1 %>% forecast(h=11) %>% autoplot
+#autoplot(forecast(fit1, h=11))
+#autoplot(full_time_series, col="purple")
+
+```
+
+
+```{r}
+#plot(fit1.fcast)
+#lines(fitted(fit1), col="purple")
+#why cant i plot the real time series ontop of the forecast!!!!?????
+#lines(full_time_series, add=T)
+```
+
+
+##Used Autoplot Function: It seems no good
+
+-i really messed with the autoplot function: i even fed it differenced data from all combos of first differencing (seasonal and non-seasonal). Its models did not perform well.
+
+```{r}
+#this does a crappy job at forecasting and we can reject the null hypothesis that the residuals are independent of each other (we don't want to).
+fita <- auto.arima(time_series_subset, stepwise=FALSE, approximation=FALSE)
+residualsa <- residuals(fita)
+checkresiduals(fita)
+
+summary(fita)
+plot(fitted(fita))
+plot(residuals(fita))
+
+fita.fcast <- forecast(fita, h=11)
+plot(fita.fcast)
+```
+
+
+```{r}
+#fit auto.arima on seasonal differenced only data.
+fitb <- auto.arima(season_diff_only, stepwise=FALSE, approximation=FALSE)
+residualsa <- residuals(fitb)
+checkresiduals(fitb)
+
+summary(fitb)
+plot(fitted(fitb))
+plot(residuals(fitb))
+
+```
+
+
+```{r}
+#fit auto.arima on trend and seasonal differenced only data.
+fitc <- auto.arima(season_diff, stepwise=FALSE, approximation=FALSE)
+residualsc <- residuals(fitc)
+checkresiduals(fitc)
+
+summary(fitc)
+plot(fitted(fitc))
+plot(residuals(fitc))
+
+```
+
+##Here is the Modeling on the Seasonal-only Differenced Data
+
+-the model diagnostics do not look good, though they perform pretty well in MAPE on the test data (which technically i shouldnt have done becasue the model doesnt look good, but i was curious).
+
+I tried the simplest AR model but based on ACF and pACF, i estimated fit7 and fit8 too.
+```{r}
+fit6 <- Arima(time_series_subset, order=c(1,0,0), seasonal = list(order =c(1,1,0), period=12))
+residuals6 <- residuals(fit6)
+checkresiduals(fit6)
+summary(fit6)
+fit6.fcast <- forecast(fit6, h=11)
+#plot(fit6.fcast)
+```
+
+
+```{r}
+fit7 <- Arima(time_series_subset, order=c(3,0,0), seasonal = list(order =c(1,1,0), period=12))
+residuals7 <- residuals(fit7)
+checkresiduals(fit7)
+summary(fit7)
+fit7.fcast <- forecast(fit7, h=11)
+#plot(fit7.fcast)
+```
+
+
+```{r}
+fit8 <- Arima(time_series_subset, order=c(6,0,0), seasonal = list(order =c(1,1,0), period=12))
+residuals8 <- residuals(fit8)
+checkresiduals(fit8)
+summary(fit8)
+fit8.fcast <- forecast(fit8, h=11)
+#plot(fit8.fcast)
+```
+
+
+##Summary of In Sample model fit
+
+-i am favoring AICc, that's what was promoted by async and readings
+
+-model 4 has statistically significant coefficients SARIMA(1,1,1)(0,1,1)_12 and model diagnostics look good
+
+
+```{r}
+#below are SARIMA
+fit1$aicc
+fit2$aicc
+fit3$aicc
+fit4$aicc
+fit5$aicc
+#below are AR models with integrated AR seasonal comonent
+fit6$aicc
+fit7$aicc
+fit8$aicc
+#below are the autoplot generated possibilites
+fita$aicc
+fitb$aicc
+fitc$aicc
+
+```
+
+
+##Evaluating Out-Of-Sample Fit 
+
+-calculate MAPE comparing test data to forecast data
+
+#Subsetting Test Data
+
+```{r}
+#hold out data
+
+hold_out <- full_time_series['2015-01-01/2015-11-01']
+#View(hold_out)
+
+model_fullseries_5 <- Arima(full_time_series, order=c(1,1,1), seasonal = list(order =c(0,1,1), period=12))
+residuals5 <- residuals(model_fullseries_5)
+checkresiduals(model_fullseries_5)
+summary(model_fullseries_5)
+```
+
+
+
+#Below I calculate Mean Absolute Percent Error on the test data (hold out data) for the auto.Arima models and my models 1-8
+
+-the last value in each panel is the MAPE for that model
+
+-in summary the lowest MAPE is 3.2, but it comes from a model with poor diagnostics generated on seasonally-differenced only data
+
+-in general the models estimated using seasonally-differenced only data had lower MAPE than the SARIMA models (and poor model diagnostics)
+
+-the lowest legitimate model's MAPE is 3.3 - from fit.4 (1,1,1)(0,1,1)_12 - that model has statistically significant coefficients and model diagnostics look good.
+
+-the next lowest MAPE is 3.8 for fit.2 (2,1,2)(0,1,1)_12 which also has statistically significant coefficients and model diagnostics look good.
+
+-you will see in the next section that model performance based on these errors is great in comparison to the naive seasonal forecast (MAPE of 14.7). The naive forecast is frequenly used as a benchmark for out of sample  performance.
+
+
+
+```{r}
+predicted_fit5 <- fit5.fcast$mean[1:11]
+hold_out <- full_time_series['2015-01-01/2015-11-01']
+combo <- as.data.frame(hold_out$x)
+combo$predicted <- predicted_fit5
+#View(combo)
+print(hold_out)
+print(predicted_fit5)
+combo$absolute_percent_error <- (abs(combo$x - combo$predicted)/combo$x)*100
+#View(combo)
+mean(combo$absolute_percent_error)
+```
+
+
+```{r}
+predicted_fita <- fita.fcast$mean[1:11]
+combo$predicted <- predicted_fita
+#View(combo)
+print(hold_out)
+print(predicted_fita)
+combo$absolute_percent_error <- (abs(combo$x - combo$predicted)/combo$x)*100
+#View(combo)
+mean(combo$absolute_percent_error)
+
+```
+
+
+```{r}
+predicted_fit1 <- fit1.fcast$mean[1:11]
+combo$predicted <- predicted_fit1
+#View(combo)
+print(hold_out)
+print(predicted_fit1)
+combo$absolute_percent_error <- (abs(combo$x - combo$predicted)/combo$x)*100
+#View(combo)
+mean(combo$absolute_percent_error)
+```
+
+
+
+```{r}
+predicted_fit2 <- fit2.fcast$mean[1:11]
+combo$predicted <- predicted_fit2
+#View(combo)
+print(hold_out)
+print(predicted_fit2)
+combo$absolute_percent_error <- (abs(combo$x - combo$predicted)/combo$x)*100
+#View(combo)
+mean(combo$absolute_percent_error)
+```
+
+
+```{r}
+predicted_fit3 <- fit3.fcast$mean[1:11]
+combo$predicted <- predicted_fit3
+#View(combo)
+print(hold_out)
+print(predicted_fit3)
+combo$absolute_percent_error <- (abs(combo$x - combo$predicted)/combo$x)*100
+#View(combo)
+mean(combo$absolute_percent_error)
+```
+
+```{r}
+predicted_fit4 <- fit4.fcast$mean[1:11]
+combo$predicted <- predicted_fit4
+#View(combo)
+print(hold_out)
+print(predicted_fit4)
+combo$absolute_percent_error <- (abs(combo$x - combo$predicted)/combo$x)*100
+#View(combo)
+mean(combo$absolute_percent_error)
+```
+
+
+```{r}
+predicted_fit6 <- fit6.fcast$mean[1:11]
+combo$predicted <- predicted_fit6
+#View(combo)
+print(hold_out)
+print(predicted_fit4)
+combo$absolute_percent_error <- (abs(combo$x - combo$predicted)/combo$x)*100
+#View(combo)
+mean(combo$absolute_percent_error)
+```
+
+
+```{r}
+predicted_fit7 <- fit7.fcast$mean[1:11]
+combo$predicted <- predicted_fit7
+#View(combo)
+print(hold_out)
+print(predicted_fit7)
+combo$absolute_percent_error <- (abs(combo$x - combo$predicted)/combo$x)*100
+#View(combo)
+mean(combo$absolute_percent_error)
+```
+
+```{r}
+predicted_fit8 <- fit8.fcast$mean[1:11]
+combo$predicted <- predicted_fit8
+#View(combo)
+print(hold_out)
+print(predicted_fit8)
+combo$absolute_percent_error <- (abs(combo$x - combo$predicted)/combo$x)*100
+#View(combo)
+mean(combo$absolute_percent_error)
+```
+
+
+
+##Naive Seasonal Forecast
+
+Do we do a better job of forecasting than simply using the same values as last year to predict the 2015 values?
+
+```{r}
+#subset last year's data from the same monthly time period as the test data
+last_year <- full_time_series['2014-01-01/2014-11-01']
+#View(last_year)
+
+#extract data only (no index) from time series object for test data and last year's data
+
+values_testdata <-coredata(hold_out)
+values_lastyear <- coredata(last_year)
+#View(df_values_testdata)
+naive_seasonal<- cbind(values_testdata, values_lastyear)
+#class(values_testdata)
+head(naive_seasonal)
+
+```
+
+
+```{r}
+df_naive_seasonal <- as.data.frame(naive_seasonal)
+#class(df_naive_seasonal)
+#View(df_naive_seasonal)
+colnames(df_naive_seasonal) <- c("test_data","lastyear_data")
+head(df_naive_seasonal)
+```
+
+
+```{r}
+
+df_naive_seasonal$absolute_percent_error <- (abs(df_naive_seasonal$lastyear_data - df_naive_seasonal$test_data) *100) / df_naive_seasonal$lastyear_data
+head(df_naive_seasonal)
+```
+
+```{r}
+mean(df_naive_seasonal$absolute_percent_error)
+```
+
+The calculated mean absolute percentage error (MAPE) for the naive seasonal forecast is 14.7. All of the models we estiamted do a better job than the naive forecast! But our fit4 model (1,1,1)(0,1,1)_12 achieves a MAPE of 3.3, which seems fantastic!
+
+## Outstanding Issues I havne't tried
+
+```{r}
+#must check invertability if going with a MA component
+
+# use polyroot(c(x, y,z)) ?
+
+```
+
+
+
+
