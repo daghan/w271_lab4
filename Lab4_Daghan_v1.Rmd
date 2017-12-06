@@ -29,7 +29,7 @@ rm(list=ls())
 # Loading and cleaning up the data
 We'll load the data and convert it to an xts object for easy subsetting
 ```{r}
-setwd("/Users/daghanaltas/Hacking/Berkeley/W271/Labs/w271_lab4")
+#setwd("/Users/daghanaltas/Hacking/Berkeley/W271/Labs/w271_lab4")
 df <- read.csv("./Lab4-series2.csv")
 rbind(head(df), tail(df))
 str(df)
