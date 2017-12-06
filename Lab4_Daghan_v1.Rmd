@@ -29,7 +29,7 @@ rm(list=ls())
 # Loading and cleaning up the data
 We'll load the data and convert it to an xts object for easy subsetting
 ```{r}
-setwd("/Users/daghanaltas/Hacking/Berkeley/W271/Labs/w271_lab4")
+setwd("/Users/daghan/Hacking/Berkeley/W271/Labs/w271_lab4")
 df <- read.csv("./Lab4-series2.csv")
 rbind(head(df), tail(df))
 str(df)
@@ -156,13 +156,30 @@ f2 <- ms.training %>% Arima(order = c(5, 1, 0), seasonal=list(order=c(0,1,1),per
 f3 <- ms.training %>% Arima(order = c(1, 1, 1), seasonal=list(order=c(0,1,1),period=12)) %>% forecast(h = 11)
 f4 <- ms.training %>% Arima(order = c(2, 1, 1), seasonal=list(order=c(0,1,1),period=12)) %>% forecast(h = 11)
 
-results <- rbind( accuracy(f1,ms.test),
+results <- round(rbind( accuracy(f1,ms.test),
                   accuracy(f2,ms.test),
                   accuracy(f3,ms.test),
-                  accuracy(f4,ms.test))
+                  accuracy(f4,ms.test)),2)
 
 results
 ```
 
 # To Do
 validate the model by doing residual analysis (q-q plot, etc...)
+
+```{r}
+ms <- as.xts(ts(df$x, start = c(1990,1), frequency = 12))
+ms.training <- ms['/2014']
+ms.test <- ms['2015/']
+f1 <- ms.training %>% Arima(order = c(2, 1, 5), seasonal=list(order=c(0,1,1),period=12)) %>% forecast(h = 11)
+f2 <- ms.training %>% Arima(order = c(5, 1, 0), seasonal=list(order=c(0,1,1),period=12)) %>% forecast(h = 11)
+f3 <- ms.training %>% Arima(order = c(1, 1, 1), seasonal=list(order=c(0,1,1),period=12)) %>% forecast(h = 11)
+f4 <- ms.training %>% Arima(order = c(2, 1, 1), seasonal=list(order=c(0,1,1),period=12)) %>% forecast(h = 11)
+
+results <- round(rbind( accuracy(f1,ms.test),
+                  accuracy(f2,ms.test),
+                  accuracy(f3,ms.test),
+                  accuracy(f4,ms.test)),2)
+
+results
+```

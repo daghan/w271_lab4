@@ -8,21 +8,13 @@ output:
   html_document: default
 ---
 
-```{r results='hide', message=FALSE, warning=FALSE, echo=FALSE}
+```{r setup, warning=FALSE, message=FALSE, size="tiny"}
 knitr::opts_chunk$set(cache=TRUE)
-library(knitr)
-library(xts)
-library(forecast)
-library(ggfortify)
-library(ggplot2)
-library(dplyr)
-library(plotly)
-library(Hmisc)
-library(tseries)
-library(stats)
-library(fpp)
-opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
 
+library(easypackages)
+packages("knitr","xts","forecast","ggfortify","ggplot2", "dplyr","plotly", "Hmisc", 
+         "tseries","stats","fpp", "forcats")
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
 rm(list=ls())
 ```
 # I. Introduction
@@ -30,13 +22,12 @@ rm(list=ls())
 
 # II. Loading and cleaning up the data
 
-We'll load the data and convert it to an xts object for easy subsetting
-
+We'll load the data and inspect the structure. We will also check to see if there are any missing values.
 ```{r}
 setwd('/Users/daghanaltas/Hacking/Berkeley/W271/Labs/w271_lab4')
 df <- read.csv("./Lab4-series2.csv")
-rbind(head(df), tail(df))
 str(df)
+cbind(head(df), tail(df))
 sum(is.na(df))      # check if there is any NA
 ```
 
@@ -46,59 +37,74 @@ We are going to convert the data to a (xts) based time seres
 ```{r}
 ms <- as.xts(ts(df$x, start = c(1990,1), frequency = 12))
 ms.training <- ms['/2014']
-rbind(head(ms.training), tail(ms.training))
 ms.test <- ms['2015/']
+rbind(head(ms.training,3), tail(ms.training,3))
 ```
 
 # III. EDA 
 
 We first plot the time series together with its ACF and PACF.
 
-```{r}
-ms.training %>% ggtsdisplay  
+```{r fig.height=3}
+# there is an issue with X axis when plotting xts objects, converting to ts for plotting
+as.ts(ms.training, start = head(index(ms.training),1), end = tail(index(ms.training),1)) %>% ggtsdisplay  
 ```
 
 We also use STL decomposition (HA ch6.5) to decompose the series into seasonal and trend components.
  
-```{r}
+```{r fig.height=4}
 fit.stl <- stl(ms.training, t.window=15, s.window="periodic", robust=TRUE)
 plot(fit.stl)
 ```
 
 The series both show a trend and a seasonal component. It is not stationary in the mean. This indicates the need for differencing to stabilize the mean. 
 
-# IV. Transformations 
+## Transformations 
 
-We try both the first and the seasonal differencing.
+We have trend so we start with taking a first difference of the time series.
 
-```{r}
+```{r fig.height=3}
 # First differencing only
 ms.training.1d <- diff(ms.training, lag = 1) 
+# We'll filter out the first value (since we have a 1 lag differencing)
 ms.training.1d <- ms.training.1d[!is.na(ms.training.1d)]
-ms.training.1d %>% ggtsdisplay
+as.ts(ms.training.1d, start = head(index(ms.training.1d),1), end = tail(index(ms.training.1d),1)) %>% ggtsdisplay 
 ```
 
-With only the first-differencing, the data are clearly non-stationary with strong seasonality.
+With only the first-differencing, the series appear to be somewhat statinary. But looking at the time domain as well as the PACF graph, it is clear that there is a strong yearly (at lag 12) component that needs to be addressed. Next we are going to explore the seasonal effects.
 
-```{r}
+```{r fig.height=3}
 # Seasonal differencing only
 ms.training.12d <- diff(ms.training, lag = 12)
+# We'll filter out the first 12 values (since we have a 12-lag differencing)
 ms.training.12d <- ms.training.12d[!is.na(ms.training.12d)]
-ms.training.12d %>% ggtsdisplay
+as.ts(ms.training.12d, start = head(index(ms.training.12d),1), end = tail(index(ms.training.12d),1)) %>% ggtsdisplay 
 ```
+We observe that the seasonal differencing has significantly smoothed the time domain graph and we further observe that effect on the ACF / PACF graphs. However, the trend is obvious and the series are not stationary. We will combine the seasonal and non-seasonal components for our next exploratory graph
 
-With only seasonal differencing, the data are clearly non-stationary.
-
-```{r}
+```{r fig.height=3}
 # Both the first and the seasonal differencing
 ms.training.1d.12d <- diff(diff(ms.training, lag = 1), lag = 12)
+# We'll filter out the first 12 values (since we have a 12-lag differencing)
 ms.training.1d.12d <- ms.training.1d.12d[!is.na(ms.training.1d.12d)]
-ms.training.1d.12d %>% ggtsdisplay
+as.ts(ms.training.1d.12d, start = head(index(ms.training.1d.12d),1), end = tail(index(ms.training.1d.12d),1)) %>% ggtsdisplay 
 ```
 
-We decide to do another difference after the seasonally difference, the data appear sufficiently stabilized.
+We note that our first-difference / lag-12 seasonal differenced model appear much more stationary and allow us to start conducting ACF / PACF analysis to find the _auto-regressive_ and _moving-average_ components. We will further strengthen our argument with an augmented Dickey Fuller test between the 2 potential series (first-difference vs. first-difference/seasonal-difference).
 
-# V. Model search
+```{r}
+adf.test(ms.training.1d.12d)
+```
+We observe that there is emprical evidence to consider our first-difference / 12-lag seasonal difference model to be stationary. In addition, we see a PACF strong component at lag 12, which suggests a seasonal MA(1) component. There are statistically significant ACF/PACF componnents at lag 2 and 5 without a clear pattern pointing in either MA or AR direction. ACF graph suggests an MA(2) model, whereas PACF graph suggests and AR(2) model. Both graphs hint at a lag(5) component, in addition to the seasonal MA(1) component. 
+
+
+## EDA Summary   
+
++ Our analysis points to an ARIMA$(p,1,q)(P,1,Q)_{12}$ model
++ Our non-seasonal AR/MA search for p/q should go up to lag(5)
++ Our expectation is to find an appropriate model with $p \in (1,2)$ and $q \in (1,2)$
+
+# IV. Model search
 
 In the plots of the differenced data, there are spikes in the PACF at lags 12, 24, 36 .. and a spike in ACF at lag 12, suggesting a seasonal MA(1) component.
 
@@ -181,24 +187,21 @@ for (p in 1:5){
     results[index,] = c(p,q,m$aic, m$aicc, m$bic)
   }
 }
-results[which.min(results$AIC),]
-results[which.min(results$AICc),]
-results[which.min(results$BIC),]
+rbind(results[which.min(results$AIC),], results[which.min(results$AICc),], results[which.min(results$BIC),])
 ```
 
 ## Candidate models
+The grid search corraborates our exploratory analysis. We have looked for an optimal p,q combination within the $p \in {1,5}$ and $q \in {1,5}$.
+Based on the information criteria optimization, we are going to focus on the following models:  
 
-Based on the exploratory analysis and grid search, we are going to focus on the following models:  
-
-- ARIMA(1,1,1)(0,1,1)[12] (minimizes BIC, best out-of-sample performance)
-
+- ARIMA(1,1,1)(0,1,1)[12] (minimizes BIC)
 - ARIMA(2,1,1)(0,1,1)[12] (minimizes AIC / AICc)
 
 # VI. Test the selected models
 
-## ARIMA(1,1,1)(0,1,1)[12]: lowest BIC and best out-of-sample performance
+## ARIMA(1,1,1)(0,1,1)[12]: lowest BIC
 
-```{r}
+```{r fig.height= 5}
 fit <- Arima(ms.training, order=c(1,1,1), seasonal=c(0,1,1))
 res <- residuals(fit)
 tsdisplay(res)
