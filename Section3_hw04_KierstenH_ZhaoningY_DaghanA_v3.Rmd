@@ -197,33 +197,34 @@ Based on the information criteria optimization, we are going to focus on the fol
 - ARIMA(1,1,1)(0,1,1)[12] (minimizes BIC)
 - ARIMA(2,1,1)(0,1,1)[12] (minimizes AIC / AICc)
 
-# VI. Test the selected models
+# VI. Model validation
 
 ## ARIMA(1,1,1)(0,1,1)[12]: lowest BIC
 
 ```{r fig.height= 5}
-fit <- Arima(ms.training, order=c(1,1,1), seasonal=c(0,1,1))
-res <- residuals(fit)
-tsdisplay(res)
-Box.test(res, lag=16, fitdf=4, type="Ljung")  # p-value = 0.2188
+fit111 <- ms.training %>% Arima(order = c(1, 1, 1), seasonal=list(order=c(0,1,1),period=12))
+res111 <- residuals(fit111)
+ggtsdisplay(res111)
+checkresiduals(fit111)
+Box.test(res111, lag=16, fitdf=4, type="Ljung")  # p-value = 0.2188
 #Box.test(res, lag=36, fitdf=6, type="Ljung")  # p-value = 0.1085
 
 # QUESTION: what parameters to use for the Box.test????
 ```
 
-```{r}
 ## ARIMA(2,1,1)(0,1,1)[12]: lowest AIC, AICc 
-fit <- Arima(ms.training, order=c(2,1,1), seasonal=c(0,1,1))
-res <- residuals(fit)
-tsdisplay(res)
-Box.test(res, lag=16, fitdf=4, type="Ljung")  # p-value = 0.6722
+```{r}
+fit211 <- ms.training %>% Arima(order = c(2, 1, 1), seasonal=list(order=c(0,1,1),period=12))
+res211 <- residuals(fit211)
+ggtsdisplay(res211)
+checkresiduals(fit211)
+Box.test(res211, lag=16, fitdf=4, type="Ljung")  # p-value = 0.6722
 #Box.test(res, lag=36, fitdf=6, type="Ljung")  # p-value = 0.2596
 
 # QUESTION: what parameters to use for the Box.test????
 ```
 
 The results for both models are similar:
-
 - We can ignore the 2 spikes outside the 95% significant limits, the residuals appear to be white noise.
 - A Ljung-Box test also shows that the residuals have no remaining auto-correlations.
 
@@ -231,39 +232,21 @@ The results for both models are similar:
 
 We do a 11-month ahead forecast of the series in 2015 using both models.
 
-## ARIMA(1,1,1)(0,1,1)[12]
-
-This is the model with the lowest BIC and best out-of-sample performance.
+```{r}
+forecast111 <- fit111 %>% forecast(h=11)
+forecast211 <- fit211 %>% forecast(h=11)
+(results <- rbind( accuracy(forecast111,ms.test),
+                  accuracy(forecast211,ms.test))[,1:5])
+```
+We note that the $ARIMA(1,1,1)(0,1,1)_{12}$ has the lowest MAPE score for the test set (2015). Therefore we are going to conduct our final forecast with that model
 
 ```{r}
-f111 <- ms.training %>% Arima(order = c(1, 1, 1), seasonal=list(order=c(0,1,1),period=12)) %>% forecast(h = 11)
-f211 <- ms.training %>% Arima(order = c(2, 1, 1), seasonal=list(order=c(0,1,1),period=12)) %>% forecast(h = 11)
-(results <- rbind( accuracy(f111,ms.test),
-                  accuracy(f211,ms.test)))
-```
-
-
-fit <- Arima(ms.training, order=c(1,1,1), seasonal=c(0,1,1));fit
-plot(forecast(fit, ), ylab="y", xlab="Year")
-
-# PLEASE HELP TO FIX THE TICK VALUES FOR X-AXIS
-```
-
-## ARIMA(2,1,1)(0,1,1)[12]
-
-This is the model with the lowest AIC and AICc.
-
-```{r}
-fit <- Arima(ms.training, order=c(2,1,1), seasonal=c(0,1,1));fit
-#plot(forecast(fit), ylab="y", xlab="Year")
-fit %>% forecast %>% autoplot
-# PLEASE HELP TO FIX THE TICK VALUES FOR X-AXIS
-
+forecast111 %>% autoplot()
 ```
 
 
 
-
+# WE NEED HIST to show residuals are normal
 
 
 
