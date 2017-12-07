@@ -245,7 +245,6 @@ forecast111 %>% autoplot()
 ```
 
 
-
 # WE NEED HIST to show residuals are normal
 
 
