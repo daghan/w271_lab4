@@ -12,7 +12,7 @@ output:
 knitr::opts_chunk$set(cache=TRUE)
 
 library(easypackages)
-packages("knitr","xts","forecast","ggfortify","ggplot2", "dplyr","plotly", "Hmisc", 
+packages("knitr","xts","forecast","ggfortify","ggplot2", "dplyr","plotly", "Hmisc",
          "tseries","stats","fpp", "forcats")
 opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
 rm(list=ls())
@@ -31,17 +31,17 @@ cbind(head(df), tail(df))
 sum(is.na(df))      # check if there is any NA
 ```
 
-There are no missing variables and the first column is the index column, which can be discarded. 
+There are no missing variables and the first column is the index column, which can be discarded.
 We are going to convert the data to a (xts) based time seres
 
 ```{r}
-ms <- as.xts(ts(df$x, start = c(1990,1), frequency = 12))
+ms <- as.xts(ts(df$x, start = c(1990,1), frequency = 12))   
 ms.training <- ms['/2014']
 ms.test <- ms['2015/']
 rbind(head(ms.training,3), tail(ms.training,3))
 ```
 
-# III. EDA 
+# III. EDA
 
 We first plot the time series together with its ACF and PACF.
 
@@ -51,24 +51,24 @@ as.ts(ms.training, start = head(index(ms.training),1), end = tail(index(ms.train
 ```
 
 We also use STL decomposition (HA ch6.5) to decompose the series into seasonal and trend components.
- 
+
 ```{r fig.height=4}
 fit.stl <- stl(ms.training, t.window=15, s.window="periodic", robust=TRUE)
 plot(fit.stl)
 ```
 
-The series both show a trend and a seasonal component. It is not stationary in the mean. This indicates the need for differencing to stabilize the mean. 
+The series both show a trend and a seasonal component. It is not stationary in the mean. This indicates the need for differencing to stabilize the mean.
 
-## Transformations 
+## Transformations
 
 We have trend so we start with taking a first difference of the time series.
 
 ```{r fig.height=3}
 # First differencing only
-ms.training.1d <- diff(ms.training, lag = 1) 
+ms.training.1d <- diff(ms.training, lag = 1)
 # We'll filter out the first value (since we have a 1 lag differencing)
 ms.training.1d <- ms.training.1d[!is.na(ms.training.1d)]
-as.ts(ms.training.1d, start = head(index(ms.training.1d),1), end = tail(index(ms.training.1d),1)) %>% ggtsdisplay 
+as.ts(ms.training.1d, start = head(index(ms.training.1d),1), end = tail(index(ms.training.1d),1)) %>% ggtsdisplay
 ```
 
 With only the first-differencing, the series appear to be somewhat statinary. But looking at the time domain as well as the PACF graph, it is clear that there is a strong yearly (at lag 12) component that needs to be addressed. Next we are going to explore the seasonal effects.
@@ -78,7 +78,7 @@ With only the first-differencing, the series appear to be somewhat statinary. Bu
 ms.training.12d <- diff(ms.training, lag = 12)
 # We'll filter out the first 12 values (since we have a 12-lag differencing)
 ms.training.12d <- ms.training.12d[!is.na(ms.training.12d)]
-as.ts(ms.training.12d, start = head(index(ms.training.12d),1), end = tail(index(ms.training.12d),1)) %>% ggtsdisplay 
+as.ts(ms.training.12d, start = head(index(ms.training.12d),1), end = tail(index(ms.training.12d),1)) %>% ggtsdisplay
 ```
 We observe that the seasonal differencing has significantly smoothed the time domain graph and we further observe that effect on the ACF / PACF graphs. However, the trend is obvious and the series are not stationary. We will combine the seasonal and non-seasonal components for our next exploratory graph
 
@@ -87,7 +87,7 @@ We observe that the seasonal differencing has significantly smoothed the time do
 ms.training.1d.12d <- diff(diff(ms.training, lag = 1), lag = 12)
 # We'll filter out the first 12 values (since we have a 12-lag differencing)
 ms.training.1d.12d <- ms.training.1d.12d[!is.na(ms.training.1d.12d)]
-as.ts(ms.training.1d.12d, start = head(index(ms.training.1d.12d),1), end = tail(index(ms.training.1d.12d),1)) %>% ggtsdisplay 
+as.ts(ms.training.1d.12d, start = head(index(ms.training.1d.12d),1), end = tail(index(ms.training.1d.12d),1)) %>% ggtsdisplay
 ```
 
 We note that our first-difference / lag-12 seasonal differenced model appear much more stationary and allow us to start conducting ACF / PACF analysis to find the _auto-regressive_ and _moving-average_ components. We will further strengthen our argument with an augmented Dickey Fuller test between the 2 potential series (first-difference vs. first-difference/seasonal-difference).
@@ -95,7 +95,7 @@ We note that our first-difference / lag-12 seasonal differenced model appear muc
 ```{r}
 adf.test(ms.training.1d.12d)
 ```
-We observe that there is emprical evidence to consider our first-difference / 12-lag seasonal difference model to be stationary. In addition, we see a PACF strong component at lag 12, which suggests a seasonal MA(1) component. There are statistically significant ACF/PACF componnents at lag 2 and 5 without a clear pattern pointing in either MA or AR direction. ACF graph suggests an MA(2) model, whereas PACF graph suggests and AR(2) model. Both graphs hint at a lag(5) component, in addition to the seasonal MA(1) component. 
+We observe that there is emprical evidence to consider our first-difference / 12-lag seasonal difference model to be stationary. In addition, we see a PACF strong component at lag 12, which suggests a seasonal MA(1) component. There are statistically significant ACF/PACF componnents at lag 2 and 5 without a clear pattern pointing in either MA or AR direction. ACF graph suggests an MA(2) model, whereas PACF graph suggests and AR(2) model. Both graphs hint at a lag(5) component, in addition to the seasonal MA(1) component.
 
 
 ## EDA Summary   
@@ -108,7 +108,7 @@ We observe that there is emprical evidence to consider our first-difference / 12
 
 In the plots of the differenced data, there are spikes in the PACF at lags 12, 24, 36 .. and a spike in ACF at lag 12, suggesting a seasonal MA(1) component.
 
-There are significant spikes at lags 2, 5 in both the ACF and PACF, suggesting a possible MA(2) or AR(2) term, however, the choice is not obvious. 
+There are significant spikes at lags 2, 5 in both the ACF and PACF, suggesting a possible MA(2) or AR(2) term, however, the choice is not obvious.
 
 We decide to start with an ARIMA(0,1,2)(0,1,1)[12] and manually fit some variations on it to identify the models with the lowest AIC and AICc values. In addition, we also consider the out-of-sample performance (MAPE) on the testing data.
 
@@ -119,13 +119,13 @@ Since the procedure is repetitive, we define a function for model testing:
 ```{r}
 # Define a function for testing models
 model.test <- function(ORDER, SEASONAL) {
-  
+
   fit.test <- Arima(ms.training, order=ORDER, seasonal = SEASONAL)
   fit.test$residuals %>% ggtsdisplay     # residual plot
-  
-  # find MAPE 
+
+  # find MAPE
   f1 <- ms.training %>% Arima(order = ORDER, seasonal=list(order=SEASONAL,period=12)) %>% forecast(h = 11)
-  
+
   # return AIC, AICc, BIC, MAPE.train, MAPE.test
   temp <- cbind(fit.test[6], fit.test[15], fit.test[16], accuracy(f1,ms.test)[1,5], accuracy(f1,ms.test)[2,5])
   colnames(temp) = c("AIC", "AICc", "BIC", "MAPE.train", "MAPE.test")
@@ -158,11 +158,11 @@ model.test(Order, Seasonal)
 
  (1,1,2)(0,1,1)[12]  -125.81    -125.60   -107.52      2.36         3.85
 
- (1,1,3)(0,1,1)[12]  -123.83    -123.53   -101.87      2.36         3.81 
+ (1,1,3)(0,1,1)[12]  -123.83    -123.53   -101.87      2.36         3.81
 
  (1,1,1)(0,1,2)[12]  -122.23    -122.01   -103.93      2.38         3.67   
 
- (2,1,1)(0,1,1)[12]  -125.86    -125.64   -107.56      2.36         3.77 
+ (2,1,1)(0,1,1)[12]  -125.86    -125.64   -107.56      2.36         3.77
 
  (3,1,1)(0,1,1)[12]  -123.86    -123.56   -101.9       2.36         3.78         
 
@@ -174,7 +174,7 @@ model.test(Order, Seasonal)
 
  (2,1,2)(0,1,1)[12]  -123.86    -123.56   -101.90      2.36         3.79       
 
-## Grid Search 
+## Grid Search
 
 We'll now conduct a grid search to see if any other model provide an enhancement over these models.
 
@@ -197,33 +197,34 @@ Based on the information criteria optimization, we are going to focus on the fol
 - ARIMA(1,1,1)(0,1,1)[12] (minimizes BIC)
 - ARIMA(2,1,1)(0,1,1)[12] (minimizes AIC / AICc)
 
-# VI. Test the selected models
+# VI. Model validation
 
 ## ARIMA(1,1,1)(0,1,1)[12]: lowest BIC
 
 ```{r fig.height= 5}
-fit <- Arima(ms.training, order=c(1,1,1), seasonal=c(0,1,1))
-res <- residuals(fit)
-tsdisplay(res)
-Box.test(res, lag=16, fitdf=4, type="Ljung")  # p-value = 0.2188
+fit111 <- ms.training %>% Arima(order = c(1, 1, 1), seasonal=list(order=c(0,1,1),period=12))
+res111 <- residuals(fit111)
+ggtsdisplay(res111)
+checkresiduals(fit111)
+Box.test(res111, lag=16, fitdf=4, type="Ljung")  # p-value = 0.2188
 #Box.test(res, lag=36, fitdf=6, type="Ljung")  # p-value = 0.1085
 
 # QUESTION: what parameters to use for the Box.test????
 ```
 
+## ARIMA(2,1,1)(0,1,1)[12]: lowest AIC, AICc
 ```{r}
-## ARIMA(2,1,1)(0,1,1)[12]: lowest AIC, AICc 
-fit <- Arima(ms.training, order=c(2,1,1), seasonal=c(0,1,1))
-res <- residuals(fit)
-tsdisplay(res)
-Box.test(res, lag=16, fitdf=4, type="Ljung")  # p-value = 0.6722
+fit211 <- ms.training %>% Arima(order = c(2, 1, 1), seasonal=list(order=c(0,1,1),period=12))
+res211 <- residuals(fit211)
+ggtsdisplay(res211)
+checkresiduals(fit211)
+Box.test(res211, lag=16, fitdf=4, type="Ljung")  # p-value = 0.6722
 #Box.test(res, lag=36, fitdf=6, type="Ljung")  # p-value = 0.2596
 
 # QUESTION: what parameters to use for the Box.test????
 ```
 
 The results for both models are similar:
-
 - We can ignore the 2 spikes outside the 95% significant limits, the residuals appear to be white noise.
 - A Ljung-Box test also shows that the residuals have no remaining auto-correlations.
 
@@ -231,39 +232,21 @@ The results for both models are similar:
 
 We do a 11-month ahead forecast of the series in 2015 using both models.
 
-## ARIMA(1,1,1)(0,1,1)[12]
-
-This is the model with the lowest BIC and best out-of-sample performance.
+```{r}
+forecast111 <- fit111 %>% forecast(h=11)
+forecast211 <- fit211 %>% forecast(h=11)
+(results <- rbind( accuracy(forecast111,ms.test),
+                  accuracy(forecast211,ms.test))[,1:5])
+```
+We note that the $ARIMA(1,1,1)(0,1,1)_{12}$ has the lowest MAPE score for the test set (2015). Therefore we are going to conduct our final forecast with that model
 
 ```{r}
-f111 <- ms.training %>% Arima(order = c(1, 1, 1), seasonal=list(order=c(0,1,1),period=12)) %>% forecast(h = 11)
-f211 <- ms.training %>% Arima(order = c(2, 1, 1), seasonal=list(order=c(0,1,1),period=12)) %>% forecast(h = 11)
-(results <- rbind( accuracy(f111,ms.test),
-                  accuracy(f211,ms.test)))
-```
-
-
-fit <- Arima(ms.training, order=c(1,1,1), seasonal=c(0,1,1));fit
-plot(forecast(fit, ), ylab="y", xlab="Year")
-
-# PLEASE HELP TO FIX THE TICK VALUES FOR X-AXIS
-```
-
-## ARIMA(2,1,1)(0,1,1)[12]
-
-This is the model with the lowest AIC and AICc.
-
-```{r}
-fit <- Arima(ms.training, order=c(2,1,1), seasonal=c(0,1,1));fit
-#plot(forecast(fit), ylab="y", xlab="Year")
-fit %>% forecast %>% autoplot
-# PLEASE HELP TO FIX THE TICK VALUES FOR X-AXIS
-
+forecast111 %>% autoplot()
 ```
 
 
 
-
+# WE NEED HIST to show residuals are normal
 
 
 
