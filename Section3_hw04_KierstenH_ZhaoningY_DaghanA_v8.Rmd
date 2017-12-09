@@ -7,53 +7,38 @@ output:
   html_notebook: default
   html_document: default
 ---
-
-```{r setup, warning=FALSE, message=FALSE, size="tiny"}
-knitr::opts_chunk$set(cache=TRUE)
-
+```{r global_options, warning=FALSE, message=FALSE, size="tiny", fig.height=3}
+knitr::opts_chunk$set(cache=TRUE, tidy = TRUE, tidy.opts=list(width.cutoff=70))
+options(width = 90) 
 library(easypackages)
 packages("knitr","xts","forecast","ggfortify","ggplot2", "dplyr","plotly", "Hmisc",
-         "tseries","stats","fpp", "forcats")
-
-opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+         "tseries","stats","fpp", "forcats", "gridExtra")
 rm(list=ls())
 ```
-# I. Introduction
-
+# I. Introduction  
 Our task was to analyze a time series entitled “Lab4-series2”. Because the time series is "unidentified" we did not know the domain of the data-generating process. Domain-specific knowledge often guides modeling choices.
 
 Nonetheless, we were able to estimate a valid model (based on model diagnostics) with high forecast accuracy (measured by mean absolute percent error (MAPE) using out-of-sample fit) when compared to a naive forecast.
 
 Of the many models we estimated, we favor an $ARIMA(1,1,1)(0,1,1)_{12}$.
 
-
 $$x_t = \phi{x_{t-1}} +\theta w_{t-1} + \Theta w_{t-12} + w_t $$
-
 and
-
 $$ \hat{x_t} = 0.93_{(0.038)}\hat{x}_{t-1} -0.80_{(0.056)}\hat{w}_{t-1} -0.89_{(0.052)}\hat{w}_{t-12}+ \hat{w}_{t} $$
-
-Our model suggests that the value of the dependent variable at any given time is dependent on a 0.93 times its value at the previous time point minus 0.8 times the error from the previous time point, minus 0.89 times the error for the same time point a year ago, plus the error for the current time interval. 
-
+Our model suggests that the value of the dependent variable at any given time is dependent on a 0.93 times its value at the previous time point minus 0.8 times the error from the previous time point, minus 0.89 times the error for the same time point a year ago, plus the error for the current time interval.   
 
 # II. Data Loading and Cleaning
-
 We began our analysis by loading the data, inspecting its structure, and checking for missing values.
-
 ```{r}
-#setwd('/Users/daghanaltas/Hacking/Berkeley/W271/Labs/w271_lab4')
 df <- read.csv("./Lab4-series2.csv")
 str(df)
 cbind(head(df), tail(df))
-sum(is.na(df))      # check if there is any NA
+sum(is.na(df))
 ```
-
 There are no missing values and the first column of the dataframe is the index column, which we chose to discard.
-We proceeded by converting the data to a (xts) based time seres due to the ease of subseting xts-based objects.
-
-```{r}
+We proceeded by converting the data to a time object.
+```{r size="tiny"}
 ms <- ts(df$x, start = c(1990,1), frequency = 12)
-
 ms.training <- window(ms, 1990, c(2014,12))
 ms.test <- window(ms, 2015)
 head(ms.training,12)
@@ -62,21 +47,17 @@ ms.test
 ```
 
 # III. Exploratory Time Series Data Analysis
-
 We initially plotted the untransformed time series with its ACF and PACF.
 
 **all charts need titiles - even if it is "Time Series of Unidentified Process: 1990-2014"**
-
 ```{r fig.height=3}
-# there is an issue with X axis when plotting xts objects, converting to ts for plotting
-ms.training %>% ggtsdisplay
+p1 <- ms.training %>% ggtsdisplay(main="Time Series Display of Unidentified Process")
 ```
 
 We made use of STL decomposition to decompose the series into seasonal and trend components.
-
-```{r fig.height=4}
+```{r fig.height=3}
 fit.stl <- stl(ms.training, t.window=15, s.window="periodic", robust=TRUE)
-plot(fit.stl)
+plot(fit.stl, main = "STL Decomposition of the Time Series ")
 ```
 
 We observed that the untransformed series has both a trend and a seasonal component. Because the series is not stationary in the mean this immediately suggested the need for differencing.
@@ -90,15 +71,11 @@ We also observe that the series has occasional unpredictable ~12-month increases
 ###Differencing for Trend
 
 We identified a trend component in the untransformed time series, so we performed a first difference of the time series.
-
 ```{r fig.height=3}
 # First differencing only
 ms.training.1d <- diff(ms.training, lag = 1)
-ms.training.1d %>% ggtsdisplay
+ms.training.1d %>% ggtsdisplay(main="Exploring the 1st Order Differencing")
 ```
-
-
-
 
 ```{r}
 adf.test(ms.training.1d)
@@ -106,30 +83,28 @@ adf.test(ms.training.1d)
 
 With first-differencing, we observed that the series appears somewhat stationary. The Augmented Dickey-Fuller test supports the idea that the first-differenced series is stationary because it rejects the null hypothesis that a unit root exists for the series (p=0.01).
 
-However, when we examined the time series plot as well as the PACF plot, we observed a strong yearly seasonal component (at lag 12). This yearly seasonal component warrants attention and so we proceeded to explore the seasonality of our time series.
+However, when we examined the time series plot as well as the PACF plot, we observed a strong yearly seasonal component (at lag 12). In order to examine the seasonal component more closely, we looked at the timeseries grouped by months. Upon inspection, it is clear that the mean of the time series varies over the year in a complex pattern. However, the variation is across months was stabilized by 12 month seasonal differencing. This suggests that the seasonality is yearly.  We did examine the effect of differencing for 4 month or 6 month seasonality (not shown for brevity) and it did not stabilize the mean across months. We are thus confident that there is yearly seasonality in this time series.
 
+```{r fig.height=3}
+p1 <- ms.training %>% ggmonthplot(main="Time Series Grouping without Lag")
+p2 <- ms.training %>% diff(lag=12) %>% ggmonthplot(main="Time Series Grouping with Lag(12)")
+grid.arrange(p1,p2, ncol = 2)
+```
 
-###Differencing for Yearly Seasonality
+This yearly seasonal component warranted attention because it would most likely affect stationarity. Thus we proceeded to explore the effect of differencing for seasonality on our time series.
 
-
+###Differencing for Yearly Seasonality  
 ```{r fig.height=3}
 # Seasonal differencing only
 ms.training.12d <- diff(ms.training, lag = 12)
-ms.training.12d %>% ggtsdisplay
+ms.training.12d %>% ggtsdisplay(main = "Exploring the Yearly Seaonality")
 ```
-
-
 We observed that the seasonal differencing significantly stabilized the time series. The Augmented Dickey-Fuller test supports the idea that the seasonally-differenced series is stationary because it rejects the null hypothesis that a unit root exists for the series (p=0.01).
 
 ```{r}
 adf.test(ms.training.12d)
-```
-
-
-```{r}
 pp.test(ms.training.12d)
 ```
-
 
 However, there is still obvious trend in the series and our intuition is that the series is not adequately stationary to proceed. Therefore, we performed another Unit Root test, the Phillips-Perron Test. The Phillips-Perron Test could not reject the null of no unit root for the series. These observation led us to examine the effect of combining differencing for trend and seasonality.
 
@@ -138,7 +113,7 @@ However, there is still obvious trend in the series and our intuition is that th
 ```{r fig.height=3}
 # Both the trend and seasonal differencing
 ms.training.1d.12d <- diff(diff(ms.training, lag = 1), lag = 12)
-ms.training.1d.12d %>% ggtsdisplay
+ms.training.1d.12d %>% ggtsdisplay(main="Combining 1st Order and Yearly Differencing")
 ```
 
 
@@ -156,44 +131,51 @@ There are statistically significant ACF/PACF components at lag 2 and 5 without a
 ## Summary of Exploratory Time Series Data Analysis 
 
 + We explored the effect of differencing for trend and yearly seasonality, and found that combining both kinds of differencing generated a weakly stationarity series.
-+ Our exploratory analysis of the time series suggests an ARIMA$(p,1,q)(0,1,1)_{12}$ model
-+ Based on our interpretation of the ACF and PACF plots, our exploration to identify non-seasonal AR/MA order (p and q) considered order up to 5.
-+ However, to avoid overfitting, the goal of our model estimation process was to identify approapriate models where the order of $p \in \{1,2\}$ and $q \in \{1,2\}$.
++ Our exploratory analysis of the time series suggests an ARIMA$(p,1,q)(P,1,D)_{12}$ model
++ Based on our interpretation of the ACF and PACF plots, our exploration to identify non-seasonal AR/MA order (p and q) considered order up to 5 and seasonal AR/MA order (P and Q) considered order up to 2
++ However, to avoid overfitting, the goal of our model estimation process was to identify approapriate models where the order of $p \in \{1,2\}, q \in \{1,2\}, P \in \{0,1\},\ and\ Q \in \{0,1\}$.
 
 # IV. Identifying the Dependence Orders for Estimated Models
-
-Based on the EDA, we will search p/q values from 1 to 5, that minimize various __Information Criteria__. We will make our final choice based on the mean absolute percentage error **(MAPE)** criterion. During our search, we will hold d=1, D=1, P=1, Q=1 constant (based on our EDA).
+Based on the EDA, we will search p/q values from 0 to 5, that minimize various __Information Criteria__. We will make our final choice based on the mean absolute percentage error **(MAPE)** criterion. During our search, we will hold d=1, D=1, P=1, Q=1 constant (based on our EDA).
 
 ```{r}
-results <- data.frame(p = 1:25, q = 1:25, AIC = 0, AICc = 0, BIC = 0)
-for (p in 1:5){
-  for (q in 1:5){
-    m <- ms.training %>% Arima(order = c(p, 1, q), seasonal=list(order=c(0,1,1),period=12))
-    index <- (p-1)*5 + q
-    results[index,] = c(p,q,m$aic, m$aicc, m$bic)
+results <- data.frame(p = 1:324, q = 1:324, P = 1:324, Q = 1:324, AIC = 999, AICc = 999, BIC = 999, MAPE = 100)
+for (p in 0:5){
+  for (q in 0:5){
+    for (P in 0:2){
+      for (Q in 0:2){
+        tryCatch({
+            m <- ms.training %>% Arima(order = c(p, 1, q), seasonal=list(order=c(P,1,Q),period=12))
+            mape <- accuracy(m)[5]
+            index <- (p*54) + (q*9) + (P*3) + (Q + 1)
+            results[index,] = c(p,q,P,Q,m$aic, m$aicc, m$bic, mape)},
+          error=function(e) { print(e) },
+          warning=function(w) {print(w) }
+        )
+      }
+    }
   }
 }
-rbind(results[which.min(results$AIC),], results[which.min(results$AICc),], results[which.min(results$BIC),])
+rbind(results[which.min(results$AIC),], results[which.min(results$AICc),], 
+      results[which.min(results$BIC),], results[which.min(results$MAPE),])
 ```
 
 ## Candidate Models
 
-Using the grid search (but also using our manual searches-not shown for brevity), we found an optimal p,q combination within the $p \in {1,5}$ and $q \in {1,5}$.
+Using the grid search (but also using our manual searches-not shown for brevity), we found an optimal p,q,P,D combination within the $p \in \{1,5\}, q \in \{1,5\}, P \in \{0,2\},\ and \  Q \in \{0,2\}$.
 
 Based on the information criteria optimization, we decided to focus on the following models:
 
 - ARIMA(1,1,1)(0,1,1)[12] because it minimized the BIC.
-- ARIMA(2,1,1)(0,1,1)[12] because it minimized the AIC and AICc.
+- ARIMA(2,1,1)(2,1,2)[12] because it minimized the AIC and AICc.
+
+While ARIMA(4,1,5)(2,1,2)[12] is tempting because it minimizes in-sample MAPE performance, this is due to overfit. Forecast accuracy has shown that it has a very poor out-of-sample MAPE score (5.2, R code not shown here for brevity / page constraints).
 
 #Model Parameter Estimation
-
 ```{r}
-fit111 <- ms.training %>% Arima(order = c(1, 1, 1), seasonal=list(order=c(0,1,1),period=12))
-summary(fit111)
-fit211 <- ms.training %>% Arima(order = c(2, 1, 1), seasonal=list(order=c(0,1,1),period=12))
-summary(fit211)
+summary(fit1 <- ms.training %>% Arima(order = c(1, 1, 1), seasonal=list(order=c(0,1,1),period=12)))
+summary(fit2 <- ms.training %>% Arima(order = c(2, 1, 1), seasonal=list(order=c(2,1,1),period=12)))
 ```
-
 All of the parameters for the two models we estimated are statistically significant. In addition, all of the coefficients are fairly large, with many of them being close to 1. Thus, the coeffients from both models are also practically significant and indicate that the lagged values we include in the model will have a large effect on modifying the value for the current time point. 
 
 # VI. Model Validation with Model Diagnostics
@@ -203,22 +185,20 @@ We performed and examined the model diagnostics for the two models we favored. B
 ## ARIMA(1,1,1)(0,1,1)[12]
 
 ```{r fig.height= 2.5}
-res111 <- residuals(fit111)
+res1<- residuals(fit1)
 #ggtsdisplay(res111)
-checkresiduals(fit111)
+checkresiduals(fit1)
 ```
 
-
-The interpretation of the model diagnostics for both of our candidate models is similar. There are very few significant lags for the model residuals in ACF plots, and the Box-Ljung tests cannot reject the null hypothesis that the residuals have remaining autocorrelations  (p=0.29 for ARIMA(1,1,1)(0,1,1)_[12]). Thus, we conclude that the model residuals sufficiently resemble white noise. In addition, the residuals from both models follow a normal distribution.
+The interpretation of the model diagnostics for both of our candidate models is similar. There are very few significant lags for the model residuals in ACF plots, and the Box-Ljung tests cannot reject the null hypothesis that the residuals *do not have* remaining autocorrelations  (p=0.29 for ARIMA(1,1,1)(0,1,1)_[12]). Thus, we conclude that the model residuals sufficiently resemble white noise. In addition, the residuals from both models follow a normal distribution.
 
 These diagnostic tests provide support for accepting the model assumptions required for valid time series modeling and forecasting. We can therefore proceed to forecasting with confidence.
-
 
 # VII. Forecasting
 
 ##Standard for Evaluating our Model
 
-We wanted to have some kind of "standard" for model performance, in order to evaluate the performance of our model accuracy. If we had information about the domain of the data generating process, that might have provided a guideline on what kind of model accuracy would be desirable.
+We wanted to have some kind of "standard" for model performance, in order to evaluate the performance of our model accuracy. If we had information about the domain of the data generating process, that might have provided a guideline on what kind of model accuracy might be expected and acceptable.
 
 In the absence of such information, naive forecast can be used as a standard against which forecasts are compared. One hopes that thier model forecast is more accurate than simply forecasting using what has either just happened or what happened at the same time period last year. In our case, we wanted to know if our favored model would outperform a naive forecast generated using the same values for last year as the current year's forecast.
 We calculated the mean absolute percentage error for comparing the test data to values from the same time last year. Doing so produced a MAPE of 17.4%, which we hoped to exceed in accuracy.
@@ -226,50 +206,39 @@ We calculated the mean absolute percentage error for comparing the test data to 
 ```{r}
 #subset last year's data from the same monthly time period as the test data
 test_data <- window(ms, 2015)
-(test_data)
+#(test_data)
 ms.naive <- window(ms, 2014, c(2014,11))
-(ms.naive)
-```
-
-
-```{r}
+#(ms.naive)
 #extract data only (no index) from time series object for test data and last year's data (naive data)
 values_test <-coredata(as.xts(test_data))
 values_naive <- coredata(as.xts(ms.naive))
 naive_seasonal<- cbind(values_naive,values_test)
-naive_seasonal
-```
-
-
-```{r}
+#naive_seasonal
 df_naive_seasonal <- as.data.frame(naive_seasonal)
 colnames(df_naive_seasonal) <- c("naive_data","test_data")
 #in this case, we treat the test data like the actual data and last year (naive) like the forecast.
 df_naive_seasonal$absolute_percent_error <- (abs(df_naive_seasonal$test_data - df_naive_seasonal$naive_data) *100) / df_naive_seasonal$test_data
-head(df_naive_seasonal)
-mean(df_naive_seasonal$absolute_percent_error)
+#head(df_naive_seasonal)
+#mean(df_naive_seasonal$absolute_percent_error)
 ```
-
 
 We proceeded by performing an 11-month ahead forecast fit of the series in 2015 using both our leading models.
 
 ```{r}
-forecast111 <- fit111 %>% forecast(h=11)
-forecast211 <- fit211 %>% forecast(h=11)
-(results <- rbind( accuracy(forecast111,ms.test),
-                  accuracy(forecast211,ms.test))[,1:5])
+forecast1 <- fit1 %>% forecast(h=11)
+forecast2 <- fit2 %>% forecast(h=11)
+(results <- rbind( accuracy(forecast1,ms.test), accuracy(forecast2,ms.test))[,1:5])
 ```
-
 
 We compared our forecast fit to our reserved test data using the MAPE score.
 
-We note that the $ARIMA(1,1,1)(0,1,1)_{12}$ has not only a lower score than the $ARIMA(2,1,1)(0,1,1)_{12}$, (3.2 versus 3.8%), but also the lowest out of sample MAPE score for any of the models we estimated. We therefore  performed forecasting with the $ARIMA(1,1,1)(0,1,1)_{12}$ model.
+We note that the $ARIMA(1,1,1)(0,1,1)_{12}$ has not only a lower score than the $ARIMA(2,1,1)(2,1,1)_{12}$, (3.2 versus 4%), but also the lowest out of sample MAPE score for any of the models we estimated (full search not shown here for breviety). We therefore  performed forecasting with the $ARIMA(1,1,1)(0,1,1)_{12}$ model.
 
 In addition, our favored model forecast substantially outperformed (by more than 5-fold) the seasonal naive forecast in terms of MAPE (3.2% versus 17.4%). We are therefore confident that we have developed a valid and accurate forecast, which we visualized below.
 
 
-```{r fig.height=2.5}
-forecast111 %>% autoplot()
+```{r fig.height=2.5, fig.width=6}
+autoplot(forecast1) + autolayer(ms.test, series = "Actual") + autolayer(forecast1$mean, series="Forecasts")
 ```
 
 The 11 month-ahead seasonal ARIMA model forecast follows the recent trend in the data due to the combination of seasonal and trend differencing. The confidence intervals are quite small for the first third of the forecast, however the confidence intervals rapidly increase during the latter two-thirds of the forecast.  The point forecasts initially increase and then trend downward. The prediction interval also initially increases but allows for the data to either trend upwards or downwards during the latter two-thirds of the forecast period. We conclude that, as expected, our model is better at predicting the near-future.
